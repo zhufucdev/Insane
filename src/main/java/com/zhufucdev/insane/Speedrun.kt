@@ -94,7 +94,7 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
                 }
                 Thread.sleep(INTERACTION_INTERVAL)
 
-                pos = place(chest)
+                pos = place(chest, craftingTablePos?.east())
                 Thread.sleep(INTERACTION_INTERVAL)
             }
             val chestInventory = openBlockInventory<ScreenHandler>(pos)
@@ -183,7 +183,7 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
         }
     }
 
-    private fun place(item: ItemStack): BlockPos {
+    private fun place(item: ItemStack, position: BlockPos? = null): BlockPos {
         var targetSlot = player.inventory.getSlotWithStack(item)
         if (targetSlot > 9) {
             val screen = InventoryScreen(player)
@@ -202,7 +202,7 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
         }
 
         player.inventory.selectedSlot = targetSlot
-        val pos = Vec3i(player.blockX, player.blockY, player.blockZ)
+        val pos = position ?: Vec3i(player.blockX, player.blockY, player.blockZ)
         baritone.builderProcess.build(
             "something",
             FillSchematic(1, 1, 1, BlockOptionalMeta(Block.getBlockFromItem(item.item))),
@@ -255,17 +255,9 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
         MinecraftClient.getInstance().interactionManager!!.apply {
             clickSlot(
                 handler.syncId,
+                handler.getSlotIndex(player.inventory, target).orElse(target),
                 handler.getSlotIndex(player.inventory, source).orElse(source),
-                0,
-                SlotActionType.PICKUP,
-                player
-            )
-            Thread.sleep(INTERACTION_INTERVAL)
-            clickSlot(
-                handler.syncId,
-                target,
-                0,
-                SlotActionType.PICKUP,
+                SlotActionType.SWAP,
                 player
             )
         }
