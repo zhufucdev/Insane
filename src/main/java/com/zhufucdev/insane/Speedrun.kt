@@ -13,6 +13,7 @@ import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource
 import net.fabricmc.loader.impl.util.log.Log
 import net.fabricmc.loader.impl.util.log.LogCategory
 import net.minecraft.block.Block
+import net.minecraft.block.Blocks
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.screen.ingame.HandledScreen
 import net.minecraft.client.gui.screen.ingame.InventoryScreen
@@ -183,6 +184,21 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
         }
     }
 
+    private suspend fun mine(quantity: Int, vararg block: Block) = suspendCoroutine { c ->
+        try {
+            baritone.mineProcess.mine(quantity, *block)
+            source.sendFeedback(Text.literal("Mining ${block.joinToString()}"))
+        } catch (_: IllegalStateException) {
+            // ignored
+        }
+
+        val items = block.map { it.asItem() }
+        while (player.inventory.main.sumOf { it.takeIf { items.contains(it.item) }?.count ?: 0 } < quantity) {
+            Thread.sleep(MONITOR_INTERVAL)
+        }
+        c.resumeWith(Result.success(player.inventory.main.filter { items.contains(it.item) }))
+    }
+
     private fun place(item: ItemStack, position: BlockPos? = null): BlockPos {
         var targetSlot = player.inventory.getSlotWithStack(item)
         if (targetSlot > 9) {
@@ -216,13 +232,20 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
 
     private fun <T : ScreenHandler> openBlockInventory(blockPos: BlockPos): HandledScreen<T> {
         val client = MinecraftClient.getInstance()
-        val opened = client.interactionManager!!.interactBlock(
-            MinecraftClient.getInstance().player,
-            Hand.MAIN_HAND,
-            net.minecraft.util.hit.BlockHitResult(player.pos, Direction.UP, blockPos, false)
-        ).isAccepted
-        if (!opened) {
-            error("Unable to open the block")
+        var retries = 0
+        while (retries < 10) {
+            val opened = client.interactionManager!!.interactBlock(
+                MinecraftClient.getInstance().player,
+                Hand.MAIN_HAND,
+                net.minecraft.util.hit.BlockHitResult(player.pos, Direction.UP, blockPos, false)
+            ).isAccepted
+            if (!opened) {
+                Log.warn(LogCategory.LOG, "Unable to open the inventory. $retries retries")
+            } else {
+                break
+            }
+            Thread.sleep(RETRY_INTERVAL)
+            retries ++
         }
         while (client.currentScreen == null) {
             Thread.sleep(MONITOR_INTERVAL)
@@ -268,6 +291,36 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
             if (!player.inventory.isEmpty) {
                 getRidOfExistingItems()
             }
+
+            var wood = mine(5, *WOOD_BLOCKS).first().item
+            val playerInventoryHandler = player.playerScreenHandler
+            var craftingTablePos: BlockPos? = null
+            for (i in 0..3) {
+                val plank = craft(arrayOf(wood), screenHandler = playerInventoryHandler).item
+
+                when (i) {
+                    0 -> {
+                        val table = craft(Array(4) { plank }, screenHandler = playerInventoryHandler)
+                        craftingTablePos = place(table)
+                    }
+
+                    1 -> craft(arrayOf(plank, null, plank), screenHandler = playerInventoryHandler)
+                    2 -> {
+                        if (craftingTablePos == null) error("Crafting table not found")
+                        val inv = openBlockInventory<CraftingScreenHandler>(craftingTablePos)
+                        craft(
+                            arrayOf(plank, plank, plank, null, Items.STICK, null, null, Items.STICK),
+                            screenHandler = inv.screenHandler
+                        )
+                    }
+                }
+
+                if (player.inventory.count(wood) <= 0) {
+                    wood = player.inventory.main.firstOrNull { it.isWood }?.item
+                        ?: mine(1, *WOOD_BLOCKS).first().item
+                }
+            }
+
             source.sendFeedback(Text.literal("Insane: Speedrun completed. You are now dream"))
         } catch (e: Exception) {
             source.sendError(Text.literal("Insane: Failed to complete the run. ${e.message}"))
@@ -277,8 +330,16 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
 
     override fun stop() {}
 
+    private val WOOD_BLOCKS = arrayOf(
+        Blocks.OAK_LOG, Blocks.ACACIA_LOG, Blocks.BIRCH_LOG,
+        Blocks.CHERRY_LOG, Blocks.JUNGLE_LOG, Blocks.MANGROVE_LOG, Blocks.SPRUCE_LOG
+    )
+
+    private val ItemStack.isWood get() = WOOD_BLOCKS.contains(Block.getBlockFromItem(item))
+
     companion object {
         const val INTERACTION_INTERVAL = 50L
         const val MONITOR_INTERVAL = 100L
+        const val RETRY_INTERVAL = 500L
     }
 }
