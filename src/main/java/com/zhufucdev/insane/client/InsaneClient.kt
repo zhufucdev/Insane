@@ -10,7 +10,7 @@ import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource
 import net.minecraft.command.CommandRegistryAccess
 import net.minecraft.text.Text
 
-private var iSpeedrun: ISpeedrun? = null
+private var mSpeedrun: ISpeedrun? = null
 fun init() {
     registerCommands()
 }
@@ -20,7 +20,8 @@ private fun registerCommands() {
             ClientCommandManager.literal("speedrun")
                     .then(ClientCommandManager.literal("stop").executes { context: CommandContext<FabricClientCommandSource> ->
                         val source = context.source
-                        if (iSpeedrun == null) {
+                        val speedrun = mSpeedrun
+                        if (speedrun == null || !speedrun.stop()) {
                             source.sendError(Text.literal("No. You are not speedrunning."))
                             return@executes 1
                         }
@@ -32,7 +33,7 @@ private fun registerCommands() {
                         source.sendFeedback(Text.literal("OK. You are a speedrunner now."))
                         val speedrun = Speedrun(source)
                         speedrun.start()
-                        iSpeedrun = speedrun
+                        mSpeedrun = speedrun
                         0
                     }
 

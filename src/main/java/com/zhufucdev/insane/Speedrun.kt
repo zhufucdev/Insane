@@ -34,6 +34,7 @@ import kotlin.coroutines.suspendCoroutine
 
 class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
     private val lifecycle = CoroutineScope(Dispatchers.Default)
+    private var job: Job? = null
 
     private val player: ClientPlayerEntity = source.player
     private val baritone: IBaritone = BaritoneAPI.getProvider().getBaritoneForPlayer(source.player)
@@ -286,49 +287,58 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
         }
     }
 
-    override fun start(): Job = lifecycle.launch {
-        try {
-            if (!player.inventory.isEmpty) {
-                getRidOfExistingItems()
-            }
+    override fun start() {
+        job = lifecycle.launch {
+            try {
+                if (!player.inventory.isEmpty) {
+                    getRidOfExistingItems()
+                }
 
-            var wood = mine(5, *WOOD_BLOCKS).first().item
-            val playerInventoryHandler = player.playerScreenHandler
-            var craftingTablePos: BlockPos? = null
-            for (i in 0..3) {
-                val plank = craft(arrayOf(wood), screenHandler = playerInventoryHandler).item
+                var wood = mine(5, *WOOD_BLOCKS).first().item
+                val playerInventoryHandler = player.playerScreenHandler
+                var craftingTablePos: BlockPos? = null
+                for (i in 0..3) {
+                    val plank = craft(arrayOf(wood), screenHandler = playerInventoryHandler).item
 
-                when (i) {
-                    0 -> {
-                        val table = craft(Array(4) { plank }, screenHandler = playerInventoryHandler)
-                        craftingTablePos = place(table)
+                    when (i) {
+                        0 -> {
+                            val table = craft(Array(4) { plank }, screenHandler = playerInventoryHandler)
+                            craftingTablePos = place(table)
+                        }
+
+                        1 -> craft(arrayOf(plank, null, plank), screenHandler = playerInventoryHandler)
+                        2 -> {
+                            if (craftingTablePos == null) error("Crafting table not found")
+                            val inv = openBlockInventory<CraftingScreenHandler>(craftingTablePos)
+                            craft(
+                                arrayOf(plank, plank, plank, null, Items.STICK, null, null, Items.STICK),
+                                screenHandler = inv.screenHandler
+                            )
+                        }
                     }
 
-                    1 -> craft(arrayOf(plank, null, plank), screenHandler = playerInventoryHandler)
-                    2 -> {
-                        if (craftingTablePos == null) error("Crafting table not found")
-                        val inv = openBlockInventory<CraftingScreenHandler>(craftingTablePos)
-                        craft(
-                            arrayOf(plank, plank, plank, null, Items.STICK, null, null, Items.STICK),
-                            screenHandler = inv.screenHandler
-                        )
+                    if (player.inventory.count(wood) <= 0) {
+                        wood = player.inventory.main.firstOrNull { it.isWood }?.item
+                            ?: mine(1, *WOOD_BLOCKS).first().item
                     }
                 }
 
-                if (player.inventory.count(wood) <= 0) {
-                    wood = player.inventory.main.firstOrNull { it.isWood }?.item
-                        ?: mine(1, *WOOD_BLOCKS).first().item
-                }
+                source.sendFeedback(Text.literal("Insane: Speedrun completed. You are now dream"))
+            } catch (e: Exception) {
+                source.sendError(Text.literal("Insane: Failed to complete the run. ${e.message}"))
+                Log.error(LogCategory.GENERAL, "Failed to complete the run", e)
             }
-
-            source.sendFeedback(Text.literal("Insane: Speedrun completed. You are now dream"))
-        } catch (e: Exception) {
-            source.sendError(Text.literal("Insane: Failed to complete the run. ${e.message}"))
-            Log.error(LogCategory.GENERAL, "Failed to complete the run", e)
         }
     }
 
-    override fun stop() {}
+    override fun stop(): Boolean {
+        val job = this.job
+        if (job?.isActive == true) {
+            job.cancel()
+            return true
+        }
+        return false
+    }
 
     private val WOOD_BLOCKS = arrayOf(
         Blocks.OAK_LOG, Blocks.ACACIA_LOG, Blocks.BIRCH_LOG,
