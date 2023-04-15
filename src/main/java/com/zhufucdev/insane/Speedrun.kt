@@ -2,8 +2,11 @@ package com.zhufucdev.insane
 
 import baritone.api.BaritoneAPI
 import baritone.api.IBaritone
+import baritone.api.pathing.goals.GoalComposite
+import baritone.api.pathing.goals.GoalNear
 import baritone.api.schematic.FillSchematic
 import baritone.api.utils.BlockOptionalMeta
+import baritone.api.utils.BlockOptionalMetaLookup
 import com.zhufucdev.insane.state.ISpeedrun
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +21,7 @@ import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.screen.ingame.HandledScreen
 import net.minecraft.client.gui.screen.ingame.InventoryScreen
 import net.minecraft.client.network.ClientPlayerEntity
+import net.minecraft.entity.ItemEntity
 import net.minecraft.item.Item
 import net.minecraft.item.ItemStack
 import net.minecraft.item.Items
@@ -27,10 +31,14 @@ import net.minecraft.screen.ScreenHandler
 import net.minecraft.screen.slot.SlotActionType
 import net.minecraft.text.Text
 import net.minecraft.util.Hand
+import net.minecraft.util.TypeFilter
 import net.minecraft.util.math.BlockPos
+import net.minecraft.util.math.Box
 import net.minecraft.util.math.Direction
 import net.minecraft.util.math.Vec3i
 import kotlin.coroutines.suspendCoroutine
+import kotlin.math.ceil
+import kotlin.math.min
 
 class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
     private val lifecycle = CoroutineScope(Dispatchers.Default)
@@ -45,6 +53,7 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
         source.sendFeedback(Text.literal("Insane: Getting rid of existing items"))
         var craftingTablePos: BlockPos? = null
         var chestPos: BlockPos? = null
+
         while (!player.inventory.isEmpty) {
             var pos = chestPos
             if (pos == null) {
@@ -186,17 +195,41 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
     }
 
     private suspend fun mine(quantity: Int, vararg block: Block) = suspendCoroutine { c ->
-        try {
-            baritone.mineProcess.mine(quantity, *block)
-            source.sendFeedback(Text.literal("Mining ${block.joinToString()}"))
-        } catch (_: IllegalStateException) {
-            // ignored
-        }
-
         val items = block.map { it.asItem() }
-        while (player.inventory.main.sumOf { it.takeIf { items.contains(it.item) }?.count ?: 0 } < quantity) {
+        val blockMeta = block.map { BlockOptionalMeta(it) }.toTypedArray()
+        fun count() = player.inventory.main.sumOf { it.takeIf { items.contains(it.item) }?.count ?: 0 }
+
+        while (count() < quantity) {
+            if (!baritone.mineProcess.isActive) {
+                try {
+                    source.sendFeedback(Text.literal("Mining ${blockMeta.joinToString()}"))
+                    baritone.mineProcess.mine(quantity, *blockMeta)
+                } catch (_: IllegalStateException) {
+                    // ignored
+                }
+            }
+            while (true) {
+                val dropped = player.world.getEntitiesByType(
+                    TypeFilter.instanceOf(ItemEntity::class.java),
+                    Box(0.0, 0.0, 0.0, 5.0, 10.0, 5.0)
+                ) {
+                    items.contains(it.stack.item)
+                }
+                if (dropped.isNotEmpty()) {
+                    if (!baritone.mineProcess.isActive) {
+                        baritone.mineProcess.cancel()
+                        baritone.customGoalProcess.goal =
+                            GoalComposite(*dropped.map { GoalNear(it.blockPos, 1) }.toTypedArray())
+                    }
+                } else {
+                    break
+                }
+
+                Thread.sleep(MONITOR_INTERVAL)
+            }
             Thread.sleep(MONITOR_INTERVAL)
         }
+
         c.resumeWith(Result.success(player.inventory.main.filter { items.contains(it.item) }))
     }
 
@@ -246,7 +279,7 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
                 break
             }
             Thread.sleep(RETRY_INTERVAL)
-            retries ++
+            retries++
         }
         while (client.currentScreen == null) {
             Thread.sleep(MONITOR_INTERVAL)
@@ -287,6 +320,21 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
         }
     }
 
+    private suspend fun nextWood(mine: Boolean = true, quantity: Int = 1) =
+        player.inventory.main.firstOrNull { it.isWood && player.inventory.count(it.item) >= quantity }?.item
+            ?: if (mine) mine(quantity, *WOOD_BLOCKS).first().item else null
+
+    private suspend fun nextPlank(mine: Boolean = true, quantity: Int = 1) =
+        player.inventory.main.firstOrNull { it.isPlanks && player.inventory.count(it.item) >= quantity }?.item
+            ?: if (mine) craft(
+                arrayOf(nextWood(true, ceil(quantity / 4F).toInt())!!),
+                screenHandler = player.playerScreenHandler
+            ).item
+            else null
+
+    private fun nextItems(vararg item: Item, quantity: Int = 1) =
+        player.inventory.main.firstOrNull { item.contains(it.item) && player.inventory.count(it.item) >= quantity }?.item
+
     override fun start() {
         job = lifecycle.launch {
             try {
@@ -318,9 +366,23 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
                     }
 
                     if (player.inventory.count(wood) <= 0) {
-                        wood = player.inventory.main.firstOrNull { it.isWood }?.item
-                            ?: mine(1, *WOOD_BLOCKS).first().item
+                        wood = nextWood()
                     }
+                }
+
+                run {
+                    val stone = mine(3, Blocks.STONE, Blocks.COBBLESTONE).first().item
+                    val table = craft(Array(4) { nextPlank(quantity = 4)!! }, screenHandler = playerInventoryHandler)
+                    val sticks = nextItems(Items.STICK, quantity = 2) ?: craft(
+                        arrayOf(nextPlank(), null, nextPlank()),
+                        screenHandler = playerInventoryHandler
+                    ).item
+                    craftingTablePos = place(table)
+                    val inv = openBlockInventory<CraftingScreenHandler>(craftingTablePos!!)
+                    craft(
+                        arrayOf(stone, stone, stone, null, sticks, null, sticks),
+                        screenHandler = inv.screenHandler
+                    )
                 }
 
                 source.sendFeedback(Text.literal("Insane: Speedrun completed. You are now dream"))
@@ -345,7 +407,13 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
         Blocks.CHERRY_LOG, Blocks.JUNGLE_LOG, Blocks.MANGROVE_LOG, Blocks.SPRUCE_LOG
     )
 
+    private val PLANK_BLOCKS = arrayOf(
+        Blocks.OAK_PLANKS, Blocks.ACACIA_PLANKS, Blocks.BIRCH_PLANKS,
+        Blocks.CHERRY_PLANKS, Blocks.JUNGLE_PLANKS, Blocks.MANGROVE_PLANKS, Blocks.SPRUCE_PLANKS
+    )
+
     private val ItemStack.isWood get() = WOOD_BLOCKS.contains(Block.getBlockFromItem(item))
+    private val ItemStack.isPlanks get() = PLANK_BLOCKS.contains(Block.getBlockFromItem(item))
 
     companion object {
         const val INTERACTION_INTERVAL = 50L
