@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "Insane",
+  "version": "${version}",
+  "name": "Insane",
+  "description": "",
+  "authors": [],
+  "contact": {
+    "repo": "https://github.com/zhufu/Insanensane"
+  },
+  "license": "Apache-2.0",
+  "icon": "assets/Insane/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "client": [
+      "com.zhufucdev.insane.client.InsaneClient"
+    ],
+    "main": [
+      "com.zhufucdev.insane.Insane"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}
