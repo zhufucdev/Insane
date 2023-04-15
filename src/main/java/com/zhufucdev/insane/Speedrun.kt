@@ -10,8 +10,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource
+import net.fabricmc.loader.impl.util.log.Log
+import net.fabricmc.loader.impl.util.log.LogCategory
 import net.minecraft.block.Block
 import net.minecraft.client.MinecraftClient
+import net.minecraft.client.gui.screen.ingame.HandledScreen
 import net.minecraft.client.gui.screen.ingame.InventoryScreen
 import net.minecraft.client.network.ClientPlayerEntity
 import net.minecraft.item.Item
@@ -19,9 +22,12 @@ import net.minecraft.item.ItemStack
 import net.minecraft.item.Items
 import net.minecraft.screen.AbstractRecipeScreenHandler
 import net.minecraft.screen.CraftingScreenHandler
+import net.minecraft.screen.ScreenHandler
 import net.minecraft.screen.slot.SlotActionType
 import net.minecraft.text.Text
+import net.minecraft.util.Hand
 import net.minecraft.util.math.BlockPos
+import net.minecraft.util.math.Direction
 import net.minecraft.util.math.Vec3i
 import kotlin.coroutines.suspendCoroutine
 
@@ -35,39 +41,85 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
 
     private suspend fun getRidOfExistingItems() = suspendCoroutine { c ->
         source.sendFeedback(Text.literal("Insane: Getting rid of existing items"))
-        val chest = if (player.inventory.count(Items.CHEST) <= 0) {
-            val craftingTable: ItemStack =
-                if (player.inventory.count(Items.CRAFTING_TABLE) <= 0) {
+        var craftingTablePos: BlockPos? = null
+        var chestPos: BlockPos? = null
+        while (!player.inventory.isEmpty) {
+            var pos = chestPos
+            if (pos == null) {
+                val chest = if (player.inventory.count(Items.CHEST) <= 0) {
+                    var craftingPos = craftingTablePos
+                    if (craftingPos == null) {
+                        val craftingTable: ItemStack =
+                            if (player.inventory.count(Items.CRAFTING_TABLE) <= 0) {
+                                try {
+                                    baritone.mineProcess.mineByName(3, "oak_log")
+                                } catch (e: IllegalStateException) {
+                                    // ignored
+                                }
+                                while ((player.inventory.main.firstOrNull { it.item == Items.OAK_LOG }?.count
+                                        ?: 0) < 3
+                                ) {
+                                    Thread.sleep(MONITOR_INTERVAL)
+                                }
+                                val targetSlot = player.inventory.emptySlot
+                                val screen = InventoryScreen(player)
+                                repeat(3) {
+                                    Thread.sleep(MONITOR_INTERVAL)
+                                    craft(arrayOf(Items.OAK_LOG), targetSlot, screen.screenHandler)
+                                }
+                                craft(Array(4) { Items.OAK_PLANKS }, screenHandler = screen.screenHandler)
+                            } else {
+                                player.inventory.main.first { it.item == Items.CRAFTING_TABLE }
+                            }
+                        craftingPos = place(craftingTable)
+                        craftingTablePos = craftingPos
+                    }
+                    Thread.sleep(INTERACTION_INTERVAL)
+                    val craftingScreen = openBlockInventory<CraftingScreenHandler>(craftingPos)
+                    val chestRecipe = Array(9) { Items.OAK_PLANKS }
+                    chestRecipe[4] = null
                     try {
-                        baritone.mineProcess.mineByName(3, "oak_log")
-                    } catch (e: IllegalStateException) {
-                        // ignored
+                        craft(chestRecipe, screenHandler = craftingScreen.screenHandler)
+                    } catch (_: NoSuchElementException) {
+                        craftingTablePos = null
+                        continue
                     }
-                    while ((player.inventory.main.firstOrNull { it.item == Items.OAK_LOG }?.count ?: 0) < 3) {
-                        Thread.sleep(100L)
-                    }
-                    val targetSlot = player.inventory.emptySlot
-                    val screen = InventoryScreen(player)
-                    repeat(3) {
-                        Thread.sleep(100L)
-                        craft(arrayOf(Items.OAK_LOG), targetSlot, screen.screenHandler)
-                    }
-                    craft(Array(4) { Items.OAK_PLANKS }, screenHandler = screen.screenHandler)
                 } else {
-                    player.inventory.main.first { it.item == Items.CRAFTING_TABLE }
+                    player.inventory.main.first { it.item == Items.CHEST }
                 }
-            val pos = place(craftingTable)
-            val tableState = player.world.getBlockState(pos)
-            val playerScreen = InventoryScreen(player)
-            val handler = tableState.createScreenHandlerFactory(player.world, pos)!!
-                .createMenu(playerScreen.screenHandler.syncId, player.inventory, player) as CraftingScreenHandler
-            val chestRecipe = Array(9) { Items.OAK_PLANKS }
-            chestRecipe[4] = null
-            craft(chestRecipe, screenHandler = handler)
-        } else {
-            player.inventory.main.first { it.item == Items.CHEST }
+                try {
+                    MinecraftClient.getInstance().setScreen(null)
+                } catch (_: IllegalStateException) {
+                    // ignored
+                }
+                Thread.sleep(INTERACTION_INTERVAL)
+
+                pos = place(chest)
+                Thread.sleep(INTERACTION_INTERVAL)
+            }
+            val chestInventory = openBlockInventory<ScreenHandler>(pos)
+            var playerItems = player.inventory.main.filter { !it.isEmpty }
+            for (i in 0 until chestInventory.screenHandler.slots.size) {
+                val item = playerItems[0]
+                playerItems = playerItems.drop(1)
+                putIn(player.inventory.getSlotWithStack(item), i, chestInventory.screenHandler)
+                Thread.sleep(INTERACTION_INTERVAL)
+
+                if (playerItems.isEmpty()) {
+                    chestPos = pos
+                    break
+                }
+            }
+
+            (player.inventory.armor + player.inventory.offHand).forEach {
+                // armors, left hand, may be surviving
+                if (!it.isEmpty) {
+                    val source = player.inventory.getSlotWithStack(it)
+                    sortInventory(source, player.inventory.emptySlot)
+                    Thread.sleep(INTERACTION_INTERVAL)
+                }
+            }
         }
-        place(chest)
         c.resumeWith(Result.success(true))
     }
 
@@ -94,7 +146,7 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
                     SlotActionType.PICKUP,
                     player
                 )
-                Thread.sleep(100)
+                Thread.sleep(50)
                 clickSlot(
                     screenHandler.syncId,
                     1 + i, // top left to crafting slots,
@@ -102,7 +154,7 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
                     SlotActionType.PICKUP,
                     player
                 )
-                Thread.sleep(100)
+                Thread.sleep(50)
                 clickSlot(
                     screenHandler.syncId,
                     from,
@@ -110,7 +162,7 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
                     SlotActionType.PICKUP,
                     player
                 )
-                Thread.sleep(100)
+                Thread.sleep(INTERACTION_INTERVAL)
             }
             clickSlot(
                 screenHandler.syncId,
@@ -119,7 +171,7 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
                 SlotActionType.PICKUP,
                 player
             )
-            Thread.sleep(100)
+            Thread.sleep(INTERACTION_INTERVAL)
             clickSlot(
                 screenHandler.syncId,
                 screenHandler.getSlotIndex(player.inventory, targetSlot).asInt,
@@ -157,18 +209,84 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
             pos
         )
         while (player.world.getBlockState(BlockPos(pos)).isAir) {
-            Thread.sleep(100)
+            Thread.sleep(MONITOR_INTERVAL)
         }
         return BlockPos(pos)
     }
 
-    override fun start(): Job = lifecycle.launch {
-        if (!player.inventory.isEmpty) {
-            getRidOfExistingItems()
+    private fun <T : ScreenHandler> openBlockInventory(blockPos: BlockPos): HandledScreen<T> {
+        val client = MinecraftClient.getInstance()
+        val opened = client.interactionManager!!.interactBlock(
+            MinecraftClient.getInstance().player,
+            Hand.MAIN_HAND,
+            net.minecraft.util.hit.BlockHitResult(player.pos, Direction.UP, blockPos, false)
+        ).isAccepted
+        if (!opened) {
+            error("Unable to open the block")
         }
+        while (client.currentScreen == null) {
+            Thread.sleep(MONITOR_INTERVAL)
+        }
+        return client.currentScreen!! as HandledScreen<T>
+    }
 
-        source.sendFeedback(Text.literal("Insane: Speedrun completed. You are now dream"))
+    private fun putIn(playerSource: Int, targetSlot: Int, handler: ScreenHandler) {
+        MinecraftClient.getInstance().interactionManager!!.apply {
+            clickSlot(
+                handler.syncId,
+                handler.getSlotIndex(player.inventory, playerSource).asInt,
+                0,
+                SlotActionType.PICKUP,
+                player
+            )
+            clickSlot(
+                handler.syncId,
+                targetSlot,
+                0,
+                SlotActionType.PICKUP,
+                player
+            )
+        }
+    }
+
+    private fun sortInventory(source: Int, target: Int) {
+        val screen = InventoryScreen(player)
+        val handler = screen.screenHandler
+        MinecraftClient.getInstance().interactionManager!!.apply {
+            clickSlot(
+                handler.syncId,
+                handler.getSlotIndex(player.inventory, source).orElse(source),
+                0,
+                SlotActionType.PICKUP,
+                player
+            )
+            Thread.sleep(INTERACTION_INTERVAL)
+            clickSlot(
+                handler.syncId,
+                target,
+                0,
+                SlotActionType.PICKUP,
+                player
+            )
+        }
+    }
+
+    override fun start(): Job = lifecycle.launch {
+        try {
+            if (!player.inventory.isEmpty) {
+                getRidOfExistingItems()
+            }
+            source.sendFeedback(Text.literal("Insane: Speedrun completed. You are now dream"))
+        } catch (e: Exception) {
+            source.sendError(Text.literal("Insane: Failed to complete the run. ${e.message}"))
+            Log.error(LogCategory.GENERAL, "Failed to complete the run", e)
+        }
     }
 
     override fun stop() {}
+
+    companion object {
+        const val INTERACTION_INTERVAL = 50L
+        const val MONITOR_INTERVAL = 100L
+    }
 }
