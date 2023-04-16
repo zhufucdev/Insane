@@ -4,6 +4,6 @@ import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource
 
 interface ISpeedrun {
     val runner: FabricClientCommandSource?
-    fun start()
+    fun start(clear: Boolean)
     fun stop(): Boolean
 }

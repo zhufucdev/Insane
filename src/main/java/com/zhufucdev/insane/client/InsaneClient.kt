@@ -1,7 +1,6 @@
 package com.zhufucdev.insane.client
 
 import com.mojang.brigadier.CommandDispatcher
-import com.mojang.brigadier.context.CommandContext
 import com.zhufucdev.insane.Speedrun
 import com.zhufucdev.insane.state.ISpeedrun
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager
@@ -17,31 +16,41 @@ fun init() {
 
 private fun registerCommands() {
     val speedrunCmd =
-            ClientCommandManager.literal("speedrun")
-                    .then(ClientCommandManager.literal("stop").executes { context: CommandContext<FabricClientCommandSource> ->
-                        val source = context.source
-                        val speedrun = mSpeedrun
-                        if (speedrun == null || !speedrun.stop()) {
-                            source.sendError(Text.literal("No. You are not speedrunning."))
-                            return@executes 1
-                        }
-                        source.sendFeedback(Text.literal("OK. You are no longer a speedrunner."))
-                        0
-                    })
-                    .executes { context: CommandContext<FabricClientCommandSource> ->
-                        val source = context.source
-                        source.sendFeedback(Text.literal("OK. You are a speedrunner now."))
-                        val speedrun = Speedrun(source)
-                        speedrun.start()
-                        mSpeedrun = speedrun
-                        0
-                    }
+        ClientCommandManager.literal("speedrun")
+            .then(ClientCommandManager.literal("stop").executes { context ->
+                val source = context.source
+                val speedrun = mSpeedrun
+                if (speedrun == null || !speedrun.stop()) {
+                    source.sendError(Text.literal("No. You are not speedrunning."))
+                    return@executes 1
+                }
+                source.sendFeedback(Text.literal("OK. You are no longer a speedrunner."))
+                0
+            })
+            .then(ClientCommandManager.literal("continue").executes { context ->
+                val source = context.source
+                mSpeedrun?.stop()
+                source.sendFeedback(Text.literal("OK. You are a speedrunner now."))
+                val speedrun = Speedrun(source)
+                speedrun.start(false)
+                mSpeedrun = speedrun
+                0
+            })
+            .executes { context ->
+                mSpeedrun?.stop()
+                val source = context.source
+                source.sendFeedback(Text.literal("OK. You are a speedrunner now."))
+                val speedrun = Speedrun(source)
+                speedrun.start(true)
+                mSpeedrun = speedrun
+                0
+            }
 
 
     ClientCommandRegistrationCallback.EVENT.register(ClientCommandRegistrationCallback { dispatcher: CommandDispatcher<FabricClientCommandSource?>, registryAccess: CommandRegistryAccess? ->
         dispatcher.register(
-                ClientCommandManager.literal("insane")
-                        .then(speedrunCmd)
+            ClientCommandManager.literal("insane")
+                .then(speedrunCmd)
         )
     })
 }
