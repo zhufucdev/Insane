@@ -3,17 +3,13 @@ package com.zhufucdev.insane
 import baritone.api.BaritoneAPI
 import baritone.api.IBaritone
 import baritone.api.pathing.goals.GoalComposite
-import baritone.api.pathing.goals.GoalGetToBlock
 import baritone.api.pathing.goals.GoalNear
 import baritone.api.pathing.goals.GoalYLevel
 import baritone.api.schematic.FillSchematic
 import baritone.api.utils.BlockOptionalMeta
 import baritone.api.utils.BlockOptionalMetaLookup
 import com.zhufucdev.insane.state.ISpeedrun
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource
 import net.fabricmc.loader.impl.util.log.Log
 import net.fabricmc.loader.impl.util.log.LogCategory
@@ -29,6 +25,7 @@ import net.minecraft.item.ItemStack
 import net.minecraft.item.Items
 import net.minecraft.screen.AbstractRecipeScreenHandler
 import net.minecraft.screen.CraftingScreenHandler
+import net.minecraft.screen.FurnaceScreenHandler
 import net.minecraft.screen.ScreenHandler
 import net.minecraft.screen.slot.SlotActionType
 import net.minecraft.text.Text
@@ -125,7 +122,7 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
             for (i in 0 until chestInventory.screenHandler.slots.size) {
                 val item = playerItems[0]
                 playerItems = playerItems.drop(1)
-                putIn(player.inventory.getSlotWithStack(item), i, chestInventory.screenHandler)
+                putIn(player.inventory.getSlotWithStack(item), i, handler = chestInventory.screenHandler)
                 Thread.sleep(INTERACTION_INTERVAL)
 
                 if (playerItems.isEmpty()) {
@@ -288,6 +285,9 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
             ).isAccepted
             if (!opened) {
                 Log.warn(LogCategory.LOG, "Unable to open the inventory. $retries retries")
+                if (retries == 2) {
+                    source.sendFeedback(Text.literal("Insane: Waiting for inventory to open"))
+                }
             } else {
                 break
             }
@@ -300,12 +300,14 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
         return client.currentScreen!! as HandledScreen<T>
     }
 
-    private fun putIn(playerSource: Int, targetSlot: Int, handler: ScreenHandler) {
+    private fun putIn(playerSource: Int, targetSlot: Int, handler: ScreenHandler, half: Boolean = false) {
+        val btn = if (half) 1 else 0
         MinecraftClient.getInstance().interactionManager!!.apply {
+            val playerSlot = handler.getSlotIndex(player.inventory, playerSource).asInt
             clickSlot(
                 handler.syncId,
-                handler.getSlotIndex(player.inventory, playerSource).asInt,
-                0,
+                playerSlot,
+                btn,
                 SlotActionType.PICKUP,
                 player
             )
@@ -316,7 +318,47 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
                 SlotActionType.PICKUP,
                 player
             )
+            if (half) {
+                clickSlot(
+                    handler.syncId,
+                    playerSlot,
+                    0,
+                    SlotActionType.PICKUP,
+                    player
+                )
+            }
         }
+    }
+
+    private fun takeOut(invSource: Int, playerSlot: Int, handler: ScreenHandler, half: Boolean = false): ItemStack {
+        val btn = if (half) 1 else 0
+        val target = handler.getSlotIndex(player.inventory, playerSlot).asInt
+        MinecraftClient.getInstance().interactionManager!!.apply {
+            clickSlot(
+                handler.syncId,
+                invSource,
+                btn,
+                SlotActionType.PICKUP,
+                player
+            )
+            clickSlot(
+                handler.syncId,
+                target,
+                0,
+                SlotActionType.PICKUP,
+                player
+            )
+            if (half) {
+                clickSlot(
+                    handler.syncId,
+                    target,
+                    0,
+                    SlotActionType.PICKUP,
+                    player
+                )
+            }
+        }
+        return player.inventory.getStack(invSource)
     }
 
     private fun sortInventory(source: Int, target: Int) {
@@ -348,13 +390,13 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
     private fun nextItems(vararg item: Item, quantity: Int = 1) =
         player.inventory.main.firstOrNull { item.contains(it.item) && player.inventory.count(it.item) >= quantity }?.item
 
-    private suspend fun requireCraftingTable(): BlockPos {
+    private suspend fun requireCraftingTable(position: BlockPos? = null): BlockPos {
         val table = craft(Array(4) { nextPlank(quantity = 4)!! }, screenHandler = player.playerScreenHandler)
-        return place(table)
+        return place(table, position)
     }
 
     private suspend fun craftPickaxe(craftingTable: BlockPos? = null, material: Item): BlockPos {
-        val craftingTablePos = craftingTable ?: requireCraftingTable()
+        val craftingTablePos = craftingTable ?: requireCraftingTable(player.blockPos.east())
         val sticks = nextItems(Items.STICK, quantity = 2) ?: craft(
             arrayOf(nextPlank(), null, nextPlank()),
             screenHandler = player.playerScreenHandler
@@ -371,16 +413,16 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
         while (true) {
             if (pos.isWithinDistance(player.pos, 5.0)) {
                 val direction = pos.toCenterPos().subtract(player.pos).normalize()
-                val pitch = atan(direction.y)
-                val yaw = atan(direction.x / direction.z)
+                val pitch = atan(direction.y).toFloat()
+                val yaw = atan(direction.x / direction.z).toFloat()
                 baritone.customGoalProcess.setGoalAndPath(null)
-                player.setHeadYaw(yaw.toFloat())
-                player.pitch = pitch.toFloat()
+                player.yaw = yaw
+                player.pitch = pitch
                 c.resumeWith(Result.success(true))
                 return@suspendCoroutine
             }
             if (!baritone.customGoalProcess.isActive) {
-                baritone.customGoalProcess.setGoalAndPath(GoalGetToBlock(pos))
+                baritone.customGoalProcess.setGoalAndPath(GoalNear(pos, 1))
             }
             Thread.sleep(MONITOR_INTERVAL)
         }
@@ -426,7 +468,7 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
                 if (player.inventory.count(Items.STONE_PICKAXE) <= 0) {
                     val stone = mine(3, Blocks.STONE, Blocks.COBBLESTONE).first().item
                     craftingTablePos = craftPickaxe(material = stone)
-                    mine(16, Blocks.STONE, Blocks.COBBLESTONE)
+                    mine(8, Blocks.STONE, Blocks.COBBLESTONE)
                 }
 
                 if (player.inventory.count(Items.IRON_PICKAXE) <= 0) {
@@ -434,26 +476,57 @@ class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
                         craftingTablePos = requireCraftingTable()
                     }
                     getToBlock(craftingTablePos)
-                    val furnace = buildList(2) {
-                        val recipe = Array(9) { Items.COBBLESTONE }.apply { set(4, null) }
+                    val furnaceItem = if (player.inventory.count(Items.FURNACE) > 0) {
+                        player.inventory.main.first { it.item == Items.FURNACE }
+                    } else {
                         val screen = openBlockInventory<CraftingScreenHandler>(craftingTablePos)
-                        repeat(2) {
-                            add(
-                                craft(
-                                    recipe,
-                                    screenHandler = screen.screenHandler
-                                )
-                            )
-                            Thread.sleep(INTERACTION_INTERVAL)
-                        }
+                        val recipe = Array(9) { Items.COBBLESTONE }.apply { set(4, null) }
+                        craft(
+                            recipe,
+                            screenHandler = screen.screenHandler
+                        )
                     }
-                    val ironOre = mine(3,
-                        Blocks.IRON_ORE, Blocks.DEEPSLATE_IRON_ORE,
-                        targetItem = Items.RAW_IRON
+                    val coals = BaritoneAPI.getProvider().worldScanner
+                        .scanChunk(baritone.playerContext,
+                            BlockOptionalMetaLookup(Blocks.COAL_ORE), player.chunkPos, 1, -1)
+                    // coal first
+                    val coalOre: ItemStack
+                    val ironOre: ItemStack
+                    if (coals.isNotEmpty()) {
+                        coalOre = mine(2, Blocks.COAL_ORE, targetItem = Items.COAL).first()
+                        ironOre = mine(3,
+                            Blocks.IRON_ORE, Blocks.DEEPSLATE_IRON_ORE,
+                            targetItem = Items.RAW_IRON
+                        ).first()
+                    } else {
+                        ironOre = mine(3,
+                            Blocks.IRON_ORE, Blocks.DEEPSLATE_IRON_ORE,
+                            targetItem = Items.RAW_IRON
+                        ).first()
+                        coalOre = mine(1, Blocks.COAL_ORE, targetItem = Items.COAL).first()
+                    }
+
+                    val furnace = place(furnaceItem, player.blockPos.east())
+                    val inv = openBlockInventory<FurnaceScreenHandler>(furnace)
+                    putIn(
+                        player.inventory.getSlotWithStack(ironOre),
+                        0,
+                        handler = inv.screenHandler
                     )
-                    repeat(2) {
-                        place(furnace[it])
+                    Thread.sleep(INTERACTION_INTERVAL)
+                    putIn(
+                        player.inventory.getSlotWithStack(coalOre),
+                        1,
+                        handler = inv.screenHandler
+                    )
+
+                    while (inv.screenHandler.isBurning) {
+                        delay(100L)
                     }
+
+                    val ironIngots =
+                        takeOut(inv.screenHandler.craftingResultSlotIndex, player.inventory.emptySlot, inv.screenHandler)
+                    craftPickaxe(craftingTablePos, ironIngots.item)
                 }
 
                 source.sendFeedback(Text.literal("Insane: Speedrun completed. You are now dream"))
