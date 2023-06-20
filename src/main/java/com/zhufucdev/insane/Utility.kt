@@ -187,6 +187,7 @@ fun <T : ScreenHandler> openBlockInventory(player: ClientPlayerEntity, blockPos:
     while (client.currentScreen == null) {
         Thread.sleep(Speedrun.MONITOR_INTERVAL)
     }
+    @Suppress("UNCHECKED_CAST")
     return client.currentScreen!! as HandledScreen<T>
 }
 

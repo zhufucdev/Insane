@@ -1,48 +1,14 @@
 package com.zhufucdev.insane
 
 import baritone.api.BaritoneAPI
-import baritone.api.IBaritone
-import baritone.api.pathing.goals.GoalComposite
-import baritone.api.pathing.goals.GoalGetToBlock
-import baritone.api.pathing.goals.GoalNear
-import baritone.api.pathing.goals.GoalYLevel
-import baritone.api.schematic.FillSchematic
-import baritone.api.utils.BlockOptionalMeta
-import baritone.api.utils.BlockOptionalMetaLookup
-import baritone.api.utils.Rotation
 import com.zhufucdev.insane.ai.Schedular
 import com.zhufucdev.insane.ai.StartOverGoal
 import com.zhufucdev.insane.state.ISpeedrun
-import kotlinx.coroutines.*
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource
-import net.fabricmc.loader.impl.util.log.Log
-import net.fabricmc.loader.impl.util.log.LogCategory
 import net.minecraft.block.Block
 import net.minecraft.block.Blocks
-import net.minecraft.client.MinecraftClient
-import net.minecraft.client.gui.screen.ingame.HandledScreen
-import net.minecraft.client.gui.screen.ingame.InventoryScreen
-import net.minecraft.client.network.ClientPlayerEntity
-import net.minecraft.entity.ItemEntity
-import net.minecraft.item.Item
 import net.minecraft.item.ItemStack
-import net.minecraft.item.Items
-import net.minecraft.screen.AbstractRecipeScreenHandler
-import net.minecraft.screen.CraftingScreenHandler
-import net.minecraft.screen.FurnaceScreenHandler
-import net.minecraft.screen.ScreenHandler
-import net.minecraft.screen.slot.SlotActionType
 import net.minecraft.text.Text
-import net.minecraft.util.Hand
-import net.minecraft.util.TypeFilter
-import net.minecraft.util.math.BlockPos
-import net.minecraft.util.math.Box
-import net.minecraft.util.math.Direction
-import net.minecraft.util.math.Vec3i
-import net.minecraft.world.Heightmap
-import java.util.concurrent.CancellationException
-import kotlin.coroutines.suspendCoroutine
-import kotlin.math.*
 
 class Speedrun(private val source: FabricClientCommandSource) : ISpeedrun {
     private val schedular = Schedular(source.player, 3)
