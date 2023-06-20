@@ -1,7 +1,6 @@
 package com.zhufucdev.insane.ai
 
 import com.zhufucdev.insane.place
-import net.minecraft.client.network.ClientPlayerEntity
 import net.minecraft.item.Item
 import net.minecraft.item.ItemStack
 import net.minecraft.util.math.BlockPos
