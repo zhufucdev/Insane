@@ -11,7 +11,8 @@ class PlaceBlockGoal(private val item: Item, private val position: BlockPos? = n
     }
 
     override suspend fun execute(): ExecuteResult {
-        place(player, ItemStack(item), position)
+        val placedPos = place(player, ItemStack(item), position)
+        memory.remember(BlockPosMem, item, placedPos)
         return ExecuteResult.SUCCEEDED
     }
 }
