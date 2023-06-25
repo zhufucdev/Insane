@@ -2,7 +2,7 @@ package com.zhufucdev.insane
 
 import baritone.api.BaritoneAPI
 import com.zhufucdev.insane.ai.Schedular
-import com.zhufucdev.insane.ai.StartOverGoal
+import com.zhufucdev.insane.ai.goal.StartOverGoal
 import com.zhufucdev.insane.state.ISpeedrun
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource
 import net.minecraft.block.Block

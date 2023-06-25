@@ -1,5 +1,7 @@
-package com.zhufucdev.insane.ai
+package com.zhufucdev.insane.ai.goal
 
+import com.zhufucdev.insane.ai.AbstractGoal
+import com.zhufucdev.insane.ai.ExecuteResult
 import com.zhufucdev.insane.useRuntime
 import com.zhufucdev.insane.useRuntimeBlocked
 import net.minecraft.client.network.ClientPlayerEntity

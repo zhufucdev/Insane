@@ -1,7 +1,9 @@
-package com.zhufucdev.insane.ai
+package com.zhufucdev.insane.ai.goal
 
 import baritone.api.pathing.goals.GoalYLevel
 import com.zhufucdev.insane.Speedrun
+import com.zhufucdev.insane.ai.AbstractGoal
+import com.zhufucdev.insane.ai.ExecuteResult
 import com.zhufucdev.insane.baritone
 import kotlinx.coroutines.delay
 import net.minecraft.block.Blocks

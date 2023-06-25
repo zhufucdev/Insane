@@ -1,4 +1,8 @@
-package com.zhufucdev.insane.ai
+package com.zhufucdev.insane.ai.goal
+
+import com.zhufucdev.insane.ai.AbstractGoal
+import com.zhufucdev.insane.ai.ExecuteResult
+import com.zhufucdev.insane.ai.Schedular
 
 abstract class CompositeGoal(private val maxRetries: Int) : AbstractGoal() {
     abstract val goals: List<AbstractGoal>
