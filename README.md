@@ -6,7 +6,7 @@ Dream Simulator
 
 Dream is a YouTuber featuring world level Minecraft (hacking) techniques.
 
-This mod is aimed at reproduce his speedrun with 
+This mod is aimed at reproducing his speedrun with 
 [Baritone API](https://github.com/cabaletta/baritone).
 
 ## Sounds cool. Where can I get it?
@@ -24,9 +24,9 @@ Insane is a Fabric mod. If you don't know Fabric, visit [its wiki](https://fabri
 
 Meanwhile, this mod is dependent on the following mods.
 
-- Baritone [[direct link](https://github.com/cabaletta/baritone/releases/download/v1.10.1/baritone-standalone-fabric-1.10.1.jar)]
-- Baritone API [[direct link](https://github.com/cabaletta/baritone/releases/download/v1.10.1/baritone-api-fabric-1.10.1.jar)]
-- Fabric Kotlin Language [[curseforge](https://www.curseforge.com/minecraft/mc-mods/fabric-language-kotlin)]
+- Baritone 1.10.1 [[direct link](https://github.com/cabaletta/baritone/releases/download/v1.10.1/baritone-standalone-fabric-1.10.1.jar)]
+- Baritone API 1.10.1 [[direct link](https://github.com/cabaletta/baritone/releases/download/v1.10.1/baritone-api-fabric-1.10.1.jar)]
+- Fabric Kotlin Language 1.9.5 [[curseforge](https://www.curseforge.com/minecraft/mc-mods/fabric-language-kotlin)]
 
 After preparing all the above, use the following command to get started.
 ```
