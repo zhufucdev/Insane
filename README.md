@@ -15,7 +15,7 @@ You can't get it. By getting it I mean downloading a stable release where you
 get a working Dream simulator.
 
 However, the latest snapshot release can be downloaded from
-[my CI](https://build.zhufucdev.com/job/Insane/1/console).
+[my CI](https://build.zhufucdev.com/job/Insane).
 They are highly unstable. Try if you wanna go insane.
 
 ## Installation
